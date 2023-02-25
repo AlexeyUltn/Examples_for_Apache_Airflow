@@ -1,0 +1,224 @@
+import pandas as pd 
+
+from airflow import DAG 
+
+from datetime import datetime 
+
+from airflow.operators.python import PythonOperator 
+
+from airflow.providers.postgres.hooks.postgres import PostgresHook 
+
+import vertica_python 
+
+from vertica_python import connect 
+
+ 
+
+# Настриваю подключение к postgres 
+
+DAG_ID = 'transform_from_public_to_stg' 
+
+ 
+
+postgres_conn_id = 'Postgres_con' 
+
+hook1 = PostgresHook(postgres_conn_id) 
+
+conn1 = hook1.get_conn() 
+
+cur1 = conn1.cursor() 
+
+cur2 = conn1.cursor() 
+
+ 
+
+# Настриваю подключение к vertica 
+
+conn_info = {'host': '', 
+
+             'port': '', 
+
+             'user': '', 
+
+             'password': '', 
+
+             'database': ''} 
+
+connect2 = vertica_python.connect(**conn_info) 
+
+cur_vertica1 = connect2.cursor() 
+
+cur_vertica2 = connect2.cursor() 
+
+ 
+
+ 
+
+with DAG( 
+
+        dag_id=DAG_ID, 
+
+        start_date=datetime(2022, 1, 23), 
+
+        schedule_interval="@daily", 
+
+        catchup=False, 
+
+) as dag: 
+
+    def to_STAGING_currencies(): 
+
+        cur_vertica1.execute("""CREATE table if not exists LESHATAMPLIEROVYANDEXRU__STAGING.currencies( 
+
+                                date_update timestamp, 
+
+                                currency_code integer, 
+
+                                currency_code_with integer, 
+
+                                currency_with_div numeric(5,3) 
+
+                                )order by currency_code, currency_code_with, date_update 
+
+                                segmented by hash(date_update, currency_code) all nodes;""") 
+
+        cur_vertica1.execute('truncate table LESHATAMPLIEROVYANDEXRU__STAGING.currencies') 
+
+        cur1.execute("""select "date_update", "currency_code", "currency_code_with", "currency_with_div" from public.currencies where date_trunc('month',date_update) = '2022-10-01';""") #фильтрую по условию за октябрь 
+
+        result1 = cur1.fetchall() 
+
+        counter1 = 1 
+
+        for i, element in enumerate(result1):  # разбиваю и беру данные из public.currencies 
+
+            date_update = element[0] 
+
+            currency_code = element[1] 
+
+            currency_code_with = element[2] 
+
+            currency_with_div = element[3] 
+
+            insert_query1 = "insert into LESHATAMPLIEROVYANDEXRU__STAGING.currencies (date_update, currency_code, currency_code_with, currency_with_div) values ('{}', '{}', '{}', '{}');".format( 
+
+                date_update, currency_code, currency_code_with, currency_with_div) 
+
+            cur_vertica1.execute(insert_query1)  # заливаю данные в vertica 
+
+            counter1 += 1 
+
+            if counter1 % 1000 == 0: 
+
+                print(counter1) 
+
+                connect2.commit() 
+
+            connect2.commit() 
+
+ 
+
+    def to_STAGING_transactions(): 
+
+        cur_vertica2.execute("""CREATE table if not exists LESHATAMPLIEROVYANDEXRU__STAGING.transactions( 
+
+                                operation_id varchar(60), 
+
+                                account_number_from integer, 
+
+                                account_number_to integer, 
+
+                                currency_code integer, 
+
+                                country varchar(30), 
+
+                                status varchar(30), 
+
+                                transaction_type varchar(30), 
+
+                                amount integer, 
+
+                                transaction_dt timestamp 
+
+                                )order by account_number_from, currency_code, transaction_dt 
+
+                                segmented by hash (currency_code, transaction_dt) all nodes;""") 
+
+        cur_vertica2.execute('truncate table LESHATAMPLIEROVYANDEXRU__STAGING.transactions') 
+
+        cur2.execute("""select "operation_id", "account_number_from", "account_number_to", "currency_code", "country", "status", 
+
+                    "transaction_type", "amount", "transaction_dt" 
+
+                    from public.transactions where date_trunc('month',transaction_dt) = '2022-10-01';""") #фильтрую по условию за октябрь 
+
+        result2 = cur2.fetchall() 
+
+        counter2 = 1 
+
+        for i, element in enumerate(result2): #разбиваю и беру данные из public.transactions 
+
+            operation_id = element[0] 
+
+            account_number_from = element[1] 
+
+            account_number_to = element[2] 
+
+            currency_code = element[3] 
+
+            country = element[4] 
+
+            status = element[5] 
+
+            transaction_type = element[6] 
+
+            amount = element[7] 
+
+            transaction_dt = element[8] 
+
+            insert_query2 = "insert into LESHATAMPLIEROVYANDEXRU__STAGING.transactions " \ 
+
+                            "(operation_id, account_number_from, account_number_to," \ 
+
+                            "currency_code, country, status," \ 
+
+                            "transaction_type, amount, transaction_dt" \ 
+
+                            ") values ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');".format( 
+
+                            operation_id, account_number_from, account_number_to, currency_code, 
+
+                            country, status, transaction_type, amount, transaction_dt) 
+
+            cur_vertica2.execute(insert_query2) #заливаю данные в vertica 
+
+            counter2 += 1 
+
+            if counter2 % 1000 == 0: 
+
+                print(counter2) 
+
+                connect2.commit() 
+
+            connect2.commit() 
+
+to_STAGING_currencies = PythonOperator( 
+
+    task_id='to_STAGING_currencies', 
+
+    python_callable=to_STAGING_currencies, 
+
+    dag=dag) 
+
+ 
+
+to_STAGING_transactions = PythonOperator( 
+
+    task_id='to_STAGING_transactions', 
+
+    python_callable=to_STAGING_transactions, 
+
+    dag=dag) 
+ 
+
+to_STAGING_currencies >> to_STAGING_transactions 
