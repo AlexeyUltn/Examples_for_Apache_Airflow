@@ -72,7 +72,7 @@ with DAG(
 
                             .getOrCreate() 
 
- 
+       ## Создать витрину в разрезе пользователей
 
         events = spark.read.option("basePath", "/user/master/data/geo/events").parquet("/user/master/data/geo/events/")\ 
 
@@ -464,8 +464,8 @@ with DAG(
 
         dt.createOrReplaceTempView("table") 
 
- 
-
+        ##Создать витрину в разрезе зон
+       
         table_ex_2 = spark.sql(""" 
 
             with wh as 
@@ -708,7 +708,7 @@ with DAG(
 
         events1.createOrReplaceTempView("table1") 
 
- 
+        ##Построить витрину для рекомендации друзей
 
         frt = spark.sql(""" 
 
