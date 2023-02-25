@@ -18,7 +18,6 @@ from vertica_python import connect
 
 DAG_ID = 'transform_from_public_to_stg' 
 
- 
 
 postgres_conn_id = 'Postgres_con' 
 
@@ -68,7 +67,7 @@ with DAG(
 
     def to_STAGING_currencies(): 
 
-        cur_vertica1.execute("""CREATE table if not exists LESHATAMPLIEROVYANDEXRU__STAGING.currencies( 
+        cur_vertica1.execute("""CREATE table if not exists user__STAGING.currencies( 
 
                                 date_update timestamp, 
 
@@ -82,9 +81,9 @@ with DAG(
 
                                 segmented by hash(date_update, currency_code) all nodes;""") 
 
-        cur_vertica1.execute('truncate table LESHATAMPLIEROVYANDEXRU__STAGING.currencies') 
+        cur_vertica1.execute('truncate table user__STAGING.currencies') 
 
-        cur1.execute("""select "date_update", "currency_code", "currency_code_with", "currency_with_div" from public.currencies where date_trunc('month',date_update) = '2022-10-01';""") #фильтрую по условию за октябрь 
+        cur1.execute("""select "date_update", "currency_code", "currency_code_with", "currency_with_div" from public.currencies where date_trunc('month',date_update) = '2022-10-01';""") #фильтрую по месяцу 
 
         result1 = cur1.fetchall() 
 
@@ -100,7 +99,7 @@ with DAG(
 
             currency_with_div = element[3] 
 
-            insert_query1 = "insert into LESHATAMPLIEROVYANDEXRU__STAGING.currencies (date_update, currency_code, currency_code_with, currency_with_div) values ('{}', '{}', '{}', '{}');".format( 
+            insert_query1 = "insert into user__STAGING.currencies (date_update, currency_code, currency_code_with, currency_with_div) values ('{}', '{}', '{}', '{}');".format( 
 
                 date_update, currency_code, currency_code_with, currency_with_div) 
 
@@ -120,7 +119,7 @@ with DAG(
 
     def to_STAGING_transactions(): 
 
-        cur_vertica2.execute("""CREATE table if not exists LESHATAMPLIEROVYANDEXRU__STAGING.transactions( 
+        cur_vertica2.execute("""CREATE table if not exists user__STAGING.transactions( 
 
                                 operation_id varchar(60), 
 
@@ -144,7 +143,7 @@ with DAG(
 
                                 segmented by hash (currency_code, transaction_dt) all nodes;""") 
 
-        cur_vertica2.execute('truncate table LESHATAMPLIEROVYANDEXRU__STAGING.transactions') 
+        cur_vertica2.execute('truncate table user__STAGING.transactions') 
 
         cur2.execute("""select "operation_id", "account_number_from", "account_number_to", "currency_code", "country", "status", 
 
@@ -176,7 +175,7 @@ with DAG(
 
             transaction_dt = element[8] 
 
-            insert_query2 = "insert into LESHATAMPLIEROVYANDEXRU__STAGING.transactions " \ 
+            insert_query2 = "insert into user__STAGING.transactions " \ 
 
                             "(operation_id, account_number_from, account_number_to," \ 
 
