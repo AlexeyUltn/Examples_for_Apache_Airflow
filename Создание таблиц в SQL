@@ -1,0 +1,215 @@
+-- Создание таблицы group_log в схеме __STAGING 
+
+ 
+
+DROP table IF EXISTS user__STAGING.group_log; 
+
+CREATE table IF not EXISTS user__STAGING.group_log( 
+
+group_id int, 
+
+user_id int, 
+
+user_id_from int, 
+
+event varchar(100), 
+
+"datetime" datetime) 
+
+order by group_id, user_id 
+
+PARTITION BY "datetime"::date 
+
+GROUP BY calendar_hierarchy_day(datetime::date, 3, 2); 
+
+ 
+
+--select * from user__STAGING.group_log; 
+
+ 
+
+-- Создание таблицы l_user_group_activity в схеме __DWH 
+
+ 
+DROP table IF EXISTS user__DWH.l_user_group_activity; 
+
+CREATE table IF not EXISTS user__DWH.l_user_group_activity( 
+
+hk_l_user_group_activity int primary key, 
+
+hk_user_id int constraint hk_user_id_fk references user__DWH.h_users (hk_user_id), 
+
+hk_group_id int constraint hk_group_id_fk references user__DWH.h_groups (hk_group_id), 
+
+load_dt datetime,  
+
+load_src VARCHAR(20) 
+
+) 
+
+order by load_dt 
+
+SEGMENTED BY hk_l_user_group_activity all nodes 
+
+PARTITION BY load_dt::date 
+
+GROUP BY calendar_hierarchy_day(load_dt::date, 3, 2); 
+
+ 
+
+--select * from user__DWH.l_user_group_activity; 
+
+ 
+
+-- Создать скрипты миграции в таблицу связи 
+
+ 
+INSERT INTO user__DWH.l_user_group_activity(hk_l_user_group_activity, hk_user_id,hk_group_id,load_dt,load_src) 
+
+select distinct 
+
+		row_number() over() as hk_l_user_group_activity, 
+
+        hu.hk_user_id as hk_user_id, 
+
+		hg.hk_group_id as hk_group_id, 
+
+		getdate() as load_dt, 
+
+		's3' as load_src 
+
+from user__STAGING.group_log as gl 
+
+left join user__DWH.h_users  as hu on gl.user_id = hu.user_id 
+
+left join user__DWH.h_groups as hg on gl.group_id = hg.group_id; 
+
+ 
+
+--SELECT * from user__DWH.l_user_group_activity; 
+
+ 
+
+-- Создать и наполнить сателлит 
+
+drop table IF  EXISTS user__DWH.s_auth_history; 
+
+CREATE table IF not EXISTS user__DWH.s_auth_history( 
+
+hk_l_user_group_activity int constraint hk_l_user_group_activity_fk references user__DWH.l_user_group_activity (hk_l_user_group_activity), 
+
+user_id_from INT, 
+
+event varchar(100), 
+
+event_dt datetime, 
+
+load_dt datetime,  
+
+load_src VARCHAR(20) 
+
+) 
+
+order by load_dt 
+
+SEGMENTED BY hk_l_user_group_activity all nodes 
+
+PARTITION BY load_dt::date 
+
+GROUP BY calendar_hierarchy_day(load_dt::date, 3, 2);; 
+
+--SELECT * from user__DWH.s_auth_history 
+
+ 
+
+INSERT INTO user__DWH.s_auth_history(hk_l_user_group_activity, user_id_from,event,event_dt,load_dt,load_src) 
+
+select  
+
+	luga.hk_l_user_group_activity, 
+
+	gl.user_id_from, 
+
+	gl.event, 
+
+	gl."datetime" as event_dt, 
+
+	getdate() as load_dt, 
+
+	's3' as load_src 
+
+from user__STAGING.group_log as gl 
+
+	 left join user__DWH.h_groups as hg on gl.group_id = hg.group_id 
+
+	 left join user__DWH.h_users as hu on gl.user_id = hu.user_id 
+
+	 left join user__DWH.l_user_group_activity as luga on hg.hk_group_id = luga.hk_group_id and hu.hk_user_id = luga.hk_user_id;  
+
+ 
+
+--  Написать запрос и ответить на вопрос бизнеса 
+
+ 
+
+with user_group_messages as ( 
+
+select  
+
+	lgd.hk_group_id, 
+
+	count(distinct lum.hk_user_id) as cnt_users_in_group_with_messages 
+
+	from user__DWH.l_user_message lum 
+
+left join user__DWH.l_groups_dialogs lgd on lum.hk_message_id=lgd.hk_message_id  
+
+group by lgd.hk_group_id 
+
+), 
+
+user_group_log  as ( 
+
+select  
+
+	hg.hk_group_id, 
+
+	count(distinct luga.hk_user_id) as cnt_added_users 
+
+	from user__DWH.l_user_group_activity luga  
+
+left join user__DWH.h_groups hg on luga.hk_group_id =hg.hk_group_id  
+
+left join user__DWH.l_user_message lum on luga.hk_user_id =lum.hk_user_id  
+
+left join user__DWH.s_auth_history sah on luga.hk_l_user_group_activity =sah.hk_l_user_group_activity  
+
+where sah.event = 'add' 
+
+	and luga.hk_group_id in (select hk_group_id 
+
+                                            from user__DWH.h_groups 
+
+                                            order by registration_dt limit 10) 
+
+group by  
+
+	hg.hk_group_id) 
+
+select  
+
+	ugl.hk_group_id, 
+
+	cnt_added_users, 
+
+	cnt_users_in_group_with_messages, 
+
+	cnt_users_in_group_with_messages/cnt_added_users as group_conversion 
+
+from  
+
+	user_group_log ugl 
+
+left join user_group_messages ugm on ugm.hk_group_id=ugl.hk_group_id 
+
+order by group_conversion desc;
