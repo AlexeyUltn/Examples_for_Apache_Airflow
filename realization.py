@@ -2,9 +2,13 @@ from airflow import DAG
 
 from datetime import timedelta, datetime 
 
-from airflow.operators.python import PythonOperator 
+from airflow.operators.python import PythonOperator
 
- 
+import boto3 
+
+import vertica_python 
+
+from vertica_python import connect 
 
 DAG_ID='download_and_insert' 
 
@@ -22,8 +26,6 @@ with DAG(
 ) as dag: 
 
     def download(): 
-
-        import boto3 
 
         AWS_ACCESS_KEY_ID = "" 
 
@@ -56,10 +58,6 @@ with DAG(
  
 
     def insert(): 
-
-        import vertica_python 
-
-        from vertica_python import connect 
 
         conn_info = {'host': '', 
 
