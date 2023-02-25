@@ -1,0 +1,116 @@
+import pandas as pd 
+
+from airflow import DAG 
+
+from datetime import datetime 
+
+from airflow.operators.python import PythonOperator 
+
+from airflow.providers.postgres.hooks.postgres import PostgresHook 
+
+import vertica_python 
+
+from vertica_python import connect 
+
+ 
+DAG_ID = 'transform_to_DWH.global_metrics' 
+
+# Настриваю подключение к vertica 
+
+conn_info = {'host': '', 
+
+             'port': '', 
+
+             'user': '', 
+
+             'password': '', 
+
+             'database': ''} 
+
+connect1 = vertica_python.connect(**conn_info) 
+
+cur_vertica1 = connect1.cursor() 
+
+ 
+
+with DAG( 
+
+        dag_id=DAG_ID, 
+
+        start_date=datetime(2022, 1, 23), 
+
+        schedule_interval="@daily", 
+
+        catchup=False, 
+
+) as dag: 
+
+    def global_metrics(): 
+
+        cur_vertica1.execute('drop view if exists user__DWH.global_metrics;') 
+
+        cur_vertica1.execute("""CREATE view LESHATAMPLIEROVYANDEXRU__DWH.global_metrics as 
+
+                                with currencies as ( 
+
+                                    select *, 
+
+                                        lag(date_update) over(PARTITION by currency_code, currency_code_with  order by date_update) lg_date_update 
+
+                                    from user__STAGING.currencies 
+
+                                    where currency_code_with = 420 
+
+                                    ) 
+
+                                , avg_for_account as ( 
+
+                                    select 
+
+                                        account_number_from, 
+
+                                        avg(amount) avg_for_one_acc 
+
+                                    from user__STAGING.transactions 
+
+                                    group by 1 
+
+                                    ) 
+
+                                select 
+
+                                    getdate() date_update, 
+
+                                    t.currency_code currency_from, 
+
+                                    sum(t.amount*c.currency_with_div) amount_total, 
+
+                                    sum(t.amount) cnt_transactions, 
+
+                                    avg(avg_for_one_acc) avg_transactions_per_account, 
+
+                                    count(distinct t.account_number_from) cnt_accounts_make_transactions 
+
+                                from user__STAGING.transactions t 
+
+                                     left join currencies c on  t.currency_code = c.currency_code and t.transaction_dt between c.lg_date_update and c.date_update 
+
+                                     join avg_for_account av on av.account_number_from=t.account_number_from 
+
+                                group by 1,2 
+
+                                """) 
+
+        connect1.commit() 
+
+        connect1.close() 
+
+global_metrics = PythonOperator( 
+
+    task_id='global_metrics', 
+
+    python_callable=global_metrics, 
+
+    dag=dag) 
+
+global_metrics
