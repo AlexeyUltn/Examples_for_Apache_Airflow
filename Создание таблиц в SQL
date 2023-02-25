@@ -1,0 +1,153 @@
+--Скрипт создания таблицы для stg 
+
+ 
+
+select * from stg.restourants; 
+
+drop table stg.restourants; 
+
+create table stg.restourants( 
+
+id varchar, 
+
+"name" varchar); 
+
+ 
+
+select * from stg.couriers; 
+
+drop table stg.couriers; 
+
+create table stg.couriers( 
+
+id varchar, 
+
+"name" varchar); 
+
+ 
+
+select * from stg.deliveries; 
+
+drop table stg.deliveries; 
+
+create table stg.deliveries( 
+
+order_id varchar, 
+
+order_ts timestamp, 
+
+delivery_id varchar, 
+
+courier_id varchar, 
+
+address varchar, 
+
+delivery_ts timestamp, 
+
+rate float, 
+
+"sum" float, 
+
+tip_sum float); 
+
+ 
+
+--Создание таблиц в dds 
+
+select * from dds.restourants; 
+
+drop table dds.restourants; 
+
+create table dds.restourants( 
+
+id_restourants serial primary key, 
+
+id varchar, 
+
+"name" varchar); 
+
+ 
+
+select * from dds.couriers; 
+
+drop table dds.couriers; 
+
+create table dds.couriers( 
+
+id_couriers serial primary key, 
+
+id varchar, 
+
+"name" varchar); 
+
+ 
+
+select * from dds.deliveries; 
+
+drop table dds.deliveries; 
+
+create table dds.deliveries( 
+
+id_deliveries serial primary key, 
+
+order_id varchar, 
+
+order_ts timestamp, 
+
+delivery_id varchar, 
+
+courier_id varchar, 
+
+address varchar, 
+
+delivery_ts timestamp, 
+
+rate float, 
+
+"sum" float, 
+
+tip_sum float); 
+
+​ 
+
+ 
+
+select * from dds.courier_info; 
+
+DROP table dds.courier_info; 
+
+create table dds.courier_info 
+
+	( 
+
+	id serial primary key, 
+
+	id_restourants int references dds.restourants(id_restourants), 
+
+	id_couriers int references dds.couriers(id_couriers),  
+
+	id_deliveries int references dds.deliveries(id_deliveries), 
+
+	courier_id varchar(256), 
+
+	courier_name varchar(256), 
+
+	settlement_year int, 
+
+	settlement_month int check (settlement_month>=1 and settlement_month<=12), 
+
+	orders_count int, 
+
+	orders_total_sum float, 
+
+	rate_avg float, 
+
+	order_processing_fee float, 
+
+	courier_order_sum float, 
+
+	courier_tips_sum float, 
+
+	courier_reward_sum float 
+
+	);
